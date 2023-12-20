@@ -82,10 +82,5 @@ class DETRClass:
         cap.release()
         cv2.destroyAllWindows()
 
-# transformer_detector = DETRClass(capture_index=0)
-# transformer_detector()
-for i in range(-1, 100): 
-    cap = cv2.VideoCapture(i)
-    ret, frame = cap.read()
-    if ret:
-        cv2.camera_index.append(i)
+transformer_detector = DETRClass(capture_index=0)
+transformer_detector()
