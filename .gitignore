@@ -160,3 +160,8 @@ cython_debug/
 #.idea/
 
 data/
+predictions/
+
+# Files downloaded by ultralytics
+
+yolov8n.pt

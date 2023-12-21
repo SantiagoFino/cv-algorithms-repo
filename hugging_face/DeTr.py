@@ -3,7 +3,7 @@ from PIL import Image
 import torch
 import cv2
 from transformers import DetrForObjectDetection, DetrImageProcessor
-import requests
+import os
 
 
 processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-101")
@@ -27,7 +27,7 @@ outputs = model(**inputs)
 target_sizes = torch.tensor([image.size[::-1]])
 results = processor.post_process_object_detection(outputs, 
                                                   target_sizes=target_sizes, 
-                                                  threshold=0.7)[0]
+                                                  threshold=0.2)[0]
                                               
 # iterates over the 
 for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
@@ -47,8 +47,5 @@ for score, label, box in zip(results["scores"], results["labels"], results["boxe
                 color=(255, 255, 255), 
                 thickness=2)
 
-# Display the image
-cv2.imshow('Detected Objects', numpy_image)
-cv2.waitKey(0)
-cv2.destroyAllWindows()
-
+save_dir = "predictions/hugging_face/"
+cv2.imwrite(os.path.join(save_dir, 'result_image.jpeg'), numpy_image)
