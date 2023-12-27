@@ -1,17 +1,19 @@
+import os
 import numpy as np
+import pandas as pd
 from PIL import Image
 import torch
 import cv2
 from transformers import DetrForObjectDetection, DetrImageProcessor
-import os
+
 
 
 processor = DetrImageProcessor.from_pretrained("facebook/detr-resnet-101")
 model = DetrForObjectDetection.from_pretrained("facebook/detr-resnet-101")
 
 # image processing
-image_path = 'data/img_autonorte.jpeg'
-image = Image.open(image_path)
+image_path = 'img_autonorte.jpeg'
+image = Image.open("data/" + image_path)
 
 # Converts the image into a numpy.array 
 numpy_image = np.array(image.convert('RGB'))
@@ -28,8 +30,8 @@ target_sizes = torch.tensor([image.size[::-1]])
 results = processor.post_process_object_detection(outputs, 
                                                   target_sizes=target_sizes, 
                                                   threshold=0.2)[0]
-                                              
-# iterates over the 
+                      
+# iterates over the results in order to draw bounding boxes and labels on the frame
 for score, label, box in zip(results["scores"], results["labels"], results["boxes"]):
     box = box.tolist()
     # Draws the boxes of the predictions
@@ -48,4 +50,9 @@ for score, label, box in zip(results["scores"], results["labels"], results["boxe
                 thickness=2)
 
 save_dir = "predictions/hugging_face/"
-cv2.imwrite(os.path.join(save_dir, 'result_image.jpeg'), numpy_image)
+cv2.imwrite(os.path.join(save_dir, "prediction_results.jpg"), numpy_image)
+
+labels = [model.config.id2label[label] for label in results["labels"].tolist()]
+
+df = pd.DataFrame({"object": labels, "score": list(results["scores"].tolist())})
+df.to_json("predictions/hugging_face/results_json.json", indent=4)
