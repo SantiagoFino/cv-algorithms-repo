@@ -1,33 +1,9 @@
 import numpy as np
-import matplotlib.pyplot as plt
 import torch
-import torchvision
 import cv2
 from PIL import Image
-from transformers import DetrForObjectDetection, DetrImageProcessor
-from deep_sort_realtime.deepsort_tracker import DeepSort
 
 
-sample = 2
-
-DATA_PATH = f'/content/drive/MyDrive/Documents/cv_projects/data/video_sample{sample}.mp4'
-PREDICTIONS_PATH = f'/content/drive/MyDrive/Documents/cv_projects/predictions/video_predictions{sample}.avi'
-CLASSES = [
-    'N/A', 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
-    'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'N/A',
-    'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse',
-    'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'N/A', 'backpack',
-    'umbrella', 'N/A', 'N/A', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis',
-    'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove',
-    'skateboard', 'surfboard', 'tennis racket', 'bottle', 'N/A', 'wine glass',
-    'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich',
-    'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake',
-    'chair', 'couch', 'potted plant', 'bed', 'N/A', 'dining table', 'N/A',
-    'N/A', 'toilet', 'N/A', 'tv', 'laptop', 'mouse', 'remote', 'keyboard',
-    'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'N/A',
-    'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier',
-    'toothbrush'
-]
 
 def box_cxcywh_to_xyxy(x):
     x_c, y_c, w, h = x.unbind(1)
@@ -43,58 +19,32 @@ def rescale_bboxes(out_bbox, size, device):
 
 
 class DeTrDetector:
-    def __init__(self, capture, prediction_path, classes=CLASSES):
+    def __init__(self, model, processor, capture, prediction_path, classes):
         """
         Constructor
         Param:
+            model:
+            processor:
             capture:
             prediction_path:
+            classes:
         """
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.classes = classes
+        self.model = model.to(self.device)
+        self.processor = processor.to(self.device)
+
         self.capture = cv2.VideoCapture(capture)
         self.prediction_path = prediction_path
-        self.classes = classes
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        self.model, self.post_processor = self.load_model()
-        self.processor = self.load_processor()
         self.writer = self.generate_writer()
-        self.tracker = self.generate_tracker()
-        self.tracks = []
-
-    def generate_tracker(self):
-        pass
-
-    def load_model(self):
-        model, post_processor = torch.hub.load('facebookresearch/detr:main', 'detr_resnet50',
-                                               pretrained=True,
-                                               return_postprocessor=True)
-        return model.to(self.device), post_processor
-
-    def load_processor(self):
-        processor = torchvision.transforms.Compose([
-            torchvision.transforms.Resize(800),
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-        ])
-        return processor
-
-    def generate_tracker(self):
-        tracker = DeepSort(max_age=30,
-                                n_init=2,
-                                nms_max_overlap=3.0,
-                                max_cosine_distance=0.3,
-                                nn_budget=None,
-                                override_track_class=None,
-                                embedder="mobilenet",
-                                half=True,
-                                bgr=True,
-                                embedder_gpu=True,
-                                embedder_model_name=None,
-                                embedder_wts=None,
-                                polygon=False,
-                                today=None)
-        return tracker
 
     def generate_writer(self):
+        """
+        Generates a video writter cv object. Fixes the frame width, height and the
+        FPS of the outcome video
+        Return:
+            cv2.VideoWritter object
+        """
         frame_width = int(self.capture.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(self.capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = self.capture.get(cv2.CAP_PROP_FPS)
@@ -106,10 +56,20 @@ class DeTrDetector:
         return writer
 
     def predict(self, image, threshole=0.9):
-        # Image preprocessing
+        """
+        Detects the objects that are in a input image and select the ones with an accuracy
+        higher than the one specified in the parameters adding them into a result dictionary 
+        that stores their bounding boxes, the scores and the labels.
+        Params:
+            image (): Image that is going to be process
+            threshole (float): Threshole of the detection
+        Return:
+            dict with the predictions. The keys are "boxes" which value is a list with the 
+            bounding boxes found at the input image, "scores" which value is a list with the
+            accuracy of the found objects and "labels" which value is a list with the labels 
+            of the predicted objects
+        """
         input = self.processor(image).unsqueeze(0).to(self.device)
-
-        # pass the input image for the model
         outputs = self.model(input)
 
         # get the predictions that scores a value grater than 0.9
@@ -126,6 +86,16 @@ class DeTrDetector:
         return results
 
     def draw_boxes(self, results, image):
+        """
+        Given a dictionary with the results and its respective image, draw the bounding boxes making
+        emphasis in the object labels and in their accuracy.
+        Param:
+            results (dict): dict with the predictions. The keys are "boxes" which value is a list with the 
+            bounding boxes found at the input image, "scores" which value is a list with the
+            accuracy of the found objects and "labels" which value is a list with the labels 
+            of the predicted objects
+            image (): Image related to the results dictionary
+        """
         for score, box, label in zip(results["scores"], results["boxes"], results["labels"]):
             box = box.tolist()
             # Draws the boxes of the predictions
@@ -145,6 +115,22 @@ class DeTrDetector:
         return image
 
     def __call__(self):
+        """
+        Executes the object detection pipeline on a video stream. 
+
+        The method captures frames from the video source, processes each frame to perform object detection, 
+        draws bounding boxes around detected objects, and writes the processed frames to an output video. 
+        The process continues until the video stream ends or a 'q' key is pressed.
+
+        Steps:
+        1. Asserts that the video capture is successfully opened.
+        2. Reads frames from the video capture in a loop.
+        3. Converts frames to PIL format for processing.
+        4. Computes predictions for the current frame.
+        5. Converts the PIL image back to a NumPy array and adjusts color channels.
+        6. Draws bounding boxes on the frame based on the predictions.
+        7. Writes the processed frame to the video writer.
+        """
         assert self.capture.isOpened(), "Cannot capture source"
         while self.capture.isOpened():
             ret, frame = self.capture.read()
